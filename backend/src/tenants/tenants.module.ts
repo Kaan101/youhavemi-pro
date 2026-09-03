@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
 import { TenantsService } from "./tenants.service";
 import { TenantApiKeyGuard } from "./tenant-api-key.guard";
+import { TenantsController } from "./tenants.controller";
 
 @Module({
+  controllers: [TenantsController],
   providers: [TenantsService, TenantApiKeyGuard],
   exports: [TenantsService, TenantApiKeyGuard],
 })
