@@ -23,6 +23,12 @@ export class TenantsController {
     return this.service.createTenant(dto.name);
   }
 
+  // Kullanici istegi: admin ekraninda tum kiracilari listeleme.
+  @Get()
+  async list() {
+    return this.service.listTenants();
+  }
+
   // Kullanici istegi: bir kiracinin PARAMETRIK ayarlarini (identityMode,
   // anonymitySide, messageRetentionDays, guardrailEnabled,
   // dailyMessageLimit) guncelleme.

@@ -27,4 +27,21 @@ export class TenantsService {
     });
     return { tenant, apiKey };
   }
+
+  // Kullanici istegi: admin ekraninda TUM kiracilari listelemek icin -
+  // apiKeyHash ASLA donulmez (guvenlik).
+  async listTenants() {
+    const tenants = await this.prisma.tenant.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        settings: true,
+        webhookUrl: true,
+        createdAt: true,
+      },
+    });
+    return tenants;
+  }
 }
