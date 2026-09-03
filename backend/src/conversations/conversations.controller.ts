@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { Request } from "express";
 import { ConversationsService } from "./conversations.service";
 import { TenantApiKeyGuard } from "../tenants/tenant-api-key.guard";
@@ -31,13 +31,17 @@ export class ConversationsController {
     return this.service.sendMessage(tenantId, conversationId, dto.senderParticipantId, dto.body);
   }
 
+  // Kullanici istegi (duzeltme): GET istegi icin katilimci kimligi
+  // body yerine QUERY parametresiyle alinir - GET isteklerinde body
+  // kullanmak standart disi, bazi HTTP istemcileri/proxy'ler bunu
+  // DESTEKLEMEZ.
   @Get(":id/messages")
   async listMessages(
     @Req() request: Request,
     @Param("id") conversationId: string,
-    @Body() dto: { requestingParticipantId: string }
+    @Query("requestingParticipantId") requestingParticipantId: string
   ) {
     const tenantId = (request as any).tenant.id;
-    return this.service.listMessages(tenantId, conversationId, dto.requestingParticipantId);
+    return this.service.listMessages(tenantId, conversationId, requestingParticipantId);
   }
 }
