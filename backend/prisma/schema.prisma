@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Kullanici istegi: YouHaveMi Pro, TAMAMEN AYRI bir servis - kendi
+// veritabani, kendi kullanicilari. Mevcut YouHaveMi'ye HICBIR sekilde
+// baglanmiyor/dokunmuyor.
+
+// Kullanici istegi: servisi kullanan her uygulama (musteri) bir
+// "Tenant" (kiracı) kaydidir. API anahtari buradan uretilir/dogrulanir.
+// "settings" alani, kiracinin KENDI tercih ettigi (platform politikasi
+// tarafindan ezilmedigi surece gecerli olan) parametrik ayarlaridir -
+// JSON olarak saklanir ki yeni bir ayar eklendiginde migration
+// GEREKMESIN.
+model Tenant {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  // Kullanici istegi: API anahtari sadece HASH olarak saklanir (telefon
+  // numarasi deseniyle AYNI mantik) - duz metin asla veritabaninda
+  // durmaz, sadece kiraciya BIR KEZ gosterilir.
+  apiKeyHash  String  @unique @map("api_key_hash")
+  isActive    Boolean @default(true) @map("is_active")
+
+  // Kullanici istegi: kiracinin KENDI sectigi ayarlar - identityMode,
+  // anonymitySide, messageRetentionDays, guardrailEnabled vb. Tam
+  // TypeScript tipini backend/src/settings/tenant-settings.types.ts
+  // dosyasinda bul.
+  settings    Json    @default("{}")
+
+  // Kullanici istegi: webhook - yeni mesaj/olay bildirimleri buraya
+  // POST edilir.
+  webhookUrl  String? @map("webhook_url")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  participants  Participant[]
+  conversations Conversation[]
+
+  @@map("tenants")
+}
+
+// Kullanici istegi: PLATFORM POLITIKASI - TEK bir satir (singleton).
+// Buradaki her alan, doluysa (null degilse) TUM kiracilarin ayarini
+// EZER (zorunlu kilar) - kiracinin kendi "settings" alaninda ne
+// yazdigi ONEMLI DEGIL, platform politikasi varsa O GECERLI olur.
+// "overrides" JSON alani, tenant-settings.types.ts'teki AYNI sekli
+// tasir, ama HER alan OPSIYONELDIR (sadece zorlanmak istenen alanlar
+// doldurulur).
+model PlatformPolicy {
+  id        String @id @default("singleton")
+  overrides Json   @default("{}")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_policy")
+}
+
+// Kullanici istegi: bir kiracinin kendi kullanici tabanindaki BIR
+// KISI - kimlik modu ("phone" | "external_id" | "both") kiracinin
+// ayarina gore, telefon numarasi ZORUNLU OLMAYABILIR. "externalId",
+// kiracinin KENDI sisteminde bu kisiye verdigi HERHANGI BIR kimlik
+// (email, kullanici ID'si vb.) olabilir.
+model Participant {
+  id                    String  @id @default(uuid()) @db.Uuid
+  tenantId              String  @map("tenant_id") @db.Uuid
+  tenant                Tenant  @relation(fields: [tenantId], references: [id])
+
+  // Telefon numarasi VARSA hash'lenerek saklanir (YouHaveMi'nin
+  // mevcut deseniyle AYNI mantik) - ama ZORUNLU DEGIL.
+  phoneNumberHash       String? @map("phone_number_hash")
+  // Kiracinin KENDI verdigi dis kimlik - telefon olmadan da
+  // katilimci olusturulabilsin diye.
+  externalId            String? @map("external_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Kullanici istegi: ayni kiraci icinde, ayni telefon/externalId
+  // TEKRAR bir katilimci olusturmasin - ikisi de OPSIYONEL oldugu
+  // icin, DB seviyesinde degil, SERVIS seviyesinde kontrol edilir
+  // (Postgres, NULL degerler icin unique kisitlamayi farkli yorumlar).
+
+  sentMessages Message[]
+
+  @@index([tenantId, phoneNumberHash])
+  @@index([tenantId, externalId])
+  @@map("participants")
+}
+
+enum AnonymitySide {
+  sender
+  both
+  none
+}
+
+// Kullanici istegi: iki katilimci arasindaki konusma - hangi
+// kiraciya ait oldugu VE bu ozel konusmada anonimlik kuralinin ne
+// oldugu (kiracinin/platformun EFEKTIF ayarindan o an icin
+// COPYALANIR - sonradan kiraci ayarini degistirse bile GECMIS
+// konusmalar ETKILENMEZ).
+model Conversation {
+  id             String        @id @default(uuid()) @db.Uuid
+  tenantId       String        @map("tenant_id") @db.Uuid
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+
+  participantAId String        @map("participant_a_id") @db.Uuid
+  participantBId String?       @map("participant_b_id") @db.Uuid
+
+  anonymitySide  AnonymitySide @default(sender) @map("anonymity_side")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  senderId       String       @map("sender_id") @db.Uuid
+  sender         Participant  @relation(fields: [senderId], references: [id])
+
+  // Kullanici istegi: mesaj govdesi sifreli saklanir - YouHaveMi'nin
+  // mevcut deseniyle AYNI (geri dondurulebilir sifreleme).
+  bodyEncrypted  String       @map("body_encrypted")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([conversationId])
+  @@map("messages")
+}
